@@ -34,7 +34,6 @@ month_gb="初始化中..."
 if command -v vnstat &> /dev/null; then
     stats=$(vnstat -i $interface --oneline 2>/dev/null)
     if echo "$stats" | grep -q ";"; then
-        # 第6列是今天总计，第11列是当月总计
         today_gb=$(to_gb "$(echo "$stats" | cut -d ';' -f 6)")
         month_gb=$(to_gb "$(echo "$stats" | cut -d ';' -f 11)")
     fi
@@ -132,7 +131,8 @@ to_gb() {
     }'
 }
 while true; do
-    TIME=\$(date +"%Y-%m-%d %H:%M:%S")
+    # 核心修改：强制使用亚洲/上海（北京）时间
+    TIME=\$(TZ='Asia/Shanghai' date +"%Y-%m-%d %H:%M:%S")
     IP=\$(curl -s http://ipinfo.io/ip || curl -s ifconfig.me)
     CPU=\$[100-\$(vmstat 1 2|tail -1|awk '{print \$15}')]"%"
     MEM=\$(free | grep Mem | awk '{printf "%.2f%%", \$3/\$2 * 100.0}')
