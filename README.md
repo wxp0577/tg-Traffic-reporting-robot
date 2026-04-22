@@ -6,6 +6,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/wxp0577/tg-Traffic-reporting-
 
 菜单截图：
 
+快捷键: liuliang
+
 <img width="494" height="356" alt="image" src="https://github.com/user-attachments/assets/c1fbb55e-9b02-492c-b384-df34c5d86278" />
 
 
