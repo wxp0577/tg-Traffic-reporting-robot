@@ -45,7 +45,7 @@ if command -v vnstat &> /dev/null; then
     fi
 fi
 
-# 获取当前运行的推送频率 (从后台脚本中提取)
+# --- 核心改进：读取当前推送频率 ---
 current_interval="未知"
 if [ -f "/root/tg_traffic_run.sh" ]; then
     current_interval=$(grep "sleep " /root/tg_traffic_run.sh | awk '{print $2}')
@@ -68,17 +68,17 @@ echo "===================================================="
 echo "      🚀 TG 机器人全能监控控制台"
 echo "===================================================="
 echo "  🤖 脚本状态 : $script_status"
-echo "  ⏱️ 推送频率 : 每 $current_interval 秒发送一次"
+echo "  ⏱️ 推送频率 : 每 [ $current_interval ] 秒发送一次"
 echo "  🌐 监控网卡 : $interface"
 echo "  🔋 累计流量 : $boot_gb (自开机)"
 echo "  📅 今日流量 : $today_gb"
 echo "  🖥️ 系统状态 : CPU $(get_cpu) | 内存 $(get_mem)"
 echo "===================================================="
-echo "  1. 🛠️ 安装 / 更新监控 (并设置机器名)"
+echo "  1. 🛠️ 安装 / 更新监控 (设置机器名/Token/ID)"
 echo "  2. 🗑️ 一键彻底卸载"
 echo "  3. ⏸️ 暂停推送服务"
 echo "  4. ▶️ 恢复推送服务"
-echo "  5. ⏱️ 修改推送频率 (秒)"
+echo "  5. ⏱️ 修改推送频率"
 echo "  0. ❌ 退出菜单"
 echo "===================================================="
 read -p "👉 请选择操作 [0-5]: " action
@@ -106,29 +106,26 @@ elif [ "$action" == "4" ]; then
     echo "▶️ 推送服务已恢复运行！"
     exit 0
 
-# ---------------- 核心新增：修改频率 ----------------
 elif [ "$action" == "5" ]; then
     if [ ! -f "/root/tg_traffic_run.sh" ]; then
-        echo "❌ 错误：请先选择 1 进行安装！"
+        echo "❌ 请先选择 1 进行安装！"
         exit 1
     fi
     echo ""
+    echo "ℹ️ 当前推送间隔为: $current_interval 秒"
     read -p "👉 请输入新的发送时间间隔 (秒): " new_interval
     if [[ "$new_interval" =~ ^[0-9]+$ ]]; then
-        # 使用 sed 修改后台脚本中的 sleep 数值
         sed -i "s/sleep [0-9]*/sleep $new_interval/" /root/tg_traffic_run.sh
-        # 重启服务使之生效
         systemctl restart tgtraffic
-        echo "✅ 修改成功！当前推送频率已设为 $new_interval 秒。"
+        echo "✅ 修改成功！当前频率已更新为 $new_interval 秒。"
     else
         echo "❌ 错误：请输入纯数字！"
     fi
     exit 0
-# ----------------------------------------------------
 
 elif [ "$action" == "1" ]; then
     echo ""
-    read -p "👉 1. 请给这台 VPS 起个名字 (如: 香港A): " vps_name
+    read -p "👉 1. 给这台 VPS 起个名字: " vps_name
     read -p "👉 2. 发送时间间隔 (秒): " interval
     read -p "👉 3. 粘贴 Bot Token: " bot_token
     read -p "👉 4. 粘贴 Chat ID: " chat_id
@@ -136,7 +133,7 @@ elif [ "$action" == "1" ]; then
     apt-get update -y &> /dev/null
     apt-get install vnstat curl bc -y &> /dev/null
 
-    # 快捷指令 (修复版)
+    # 强制重新下载最新脚本作为快捷方式
     wget -qO /usr/local/bin/liuliang https://raw.githubusercontent.com/wxp0577/tg-Traffic-reporting-robot/refs/heads/main/install.sh
     chmod +x /usr/local/bin/liuliang
 
@@ -199,6 +196,6 @@ EOF
     echo "===================================================="
     exit 0
 else
-    echo "❌ 选项错误"
+    echo "❌ 输入错误"
     exit 1
 fi
