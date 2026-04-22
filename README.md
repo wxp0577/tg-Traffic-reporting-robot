@@ -4,7 +4,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/wxp0577/tg-Traffic-reporting-
 
 菜单截图：
 
-<img width="501" height="344" alt="image" src="https://github.com/user-attachments/assets/bc7714cc-074e-4e8a-af35-a7df7124f47b" />
+<img width="494" height="356" alt="image" src="https://github.com/user-attachments/assets/c1fbb55e-9b02-492c-b384-df34c5d86278" />
+
 
 消息模板：
 
