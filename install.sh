@@ -41,19 +41,24 @@ if command -v vnstat &> /dev/null; then
     if echo "$stats" | grep -q ";"; then
         today_gb=$(to_gb "$(echo "$stats" | cut -d ';' -f 6)")
     else
-        today_gb="数据初始化中(约5分)..."
+        today_gb="初始化中..."
     fi
 fi
 
-# 核心新增：检测后台服务状态
+# 获取当前运行的推送频率 (从后台脚本中提取)
+current_interval="未知"
+if [ -f "/root/tg_traffic_run.sh" ]; then
+    current_interval=$(grep "sleep " /root/tg_traffic_run.sh | awk '{print $2}')
+fi
+
+# 检测服务状态
 if systemctl is-active --quiet tgtraffic; then
     script_status="🟢 运行中"
 else
-    # 检查服务文件是否存在，判断是已停止还是未安装
     if [ -f "/etc/systemd/system/tgtraffic.service" ]; then
-        script_status="⏸️ 已暂停 (待恢复)"
+        script_status="⏸️ 已暂停"
     else
-        script_status="🔴 未运行 (未安装)"
+        script_status="🔴 未安装"
     fi
 fi
 
@@ -63,6 +68,7 @@ echo "===================================================="
 echo "      🚀 TG 机器人全能监控控制台"
 echo "===================================================="
 echo "  🤖 脚本状态 : $script_status"
+echo "  ⏱️ 推送频率 : 每 $current_interval 秒发送一次"
 echo "  🌐 监控网卡 : $interface"
 echo "  🔋 累计流量 : $boot_gb (自开机)"
 echo "  📅 今日流量 : $today_gb"
@@ -72,11 +78,12 @@ echo "  1. 🛠️ 安装 / 更新监控 (并设置机器名)"
 echo "  2. 🗑️ 一键彻底卸载"
 echo "  3. ⏸️ 暂停推送服务"
 echo "  4. ▶️ 恢复推送服务"
-echo "  0. ❌ 退出"
+echo "  5. ⏱️ 修改推送频率 (秒)"
+echo "  0. ❌ 退出菜单"
 echo "===================================================="
-read -p "👉 请选择操作 [0-4]: " action
+read -p "👉 请选择操作 [0-5]: " action
 
-# ================= 菜单执行逻辑 =================
+# ================= 执行逻辑 =================
 if [ "$action" == "0" ]; then
     echo "👋 已退出。"
     exit 0
@@ -99,9 +106,29 @@ elif [ "$action" == "4" ]; then
     echo "▶️ 推送服务已恢复运行！"
     exit 0
 
+# ---------------- 核心新增：修改频率 ----------------
+elif [ "$action" == "5" ]; then
+    if [ ! -f "/root/tg_traffic_run.sh" ]; then
+        echo "❌ 错误：请先选择 1 进行安装！"
+        exit 1
+    fi
+    echo ""
+    read -p "👉 请输入新的发送时间间隔 (秒): " new_interval
+    if [[ "$new_interval" =~ ^[0-9]+$ ]]; then
+        # 使用 sed 修改后台脚本中的 sleep 数值
+        sed -i "s/sleep [0-9]*/sleep $new_interval/" /root/tg_traffic_run.sh
+        # 重启服务使之生效
+        systemctl restart tgtraffic
+        echo "✅ 修改成功！当前推送频率已设为 $new_interval 秒。"
+    else
+        echo "❌ 错误：请输入纯数字！"
+    fi
+    exit 0
+# ----------------------------------------------------
+
 elif [ "$action" == "1" ]; then
     echo ""
-    read -p "👉 1. 请给这台 VPS 起个名字 (如: 香港A, 美国01): " vps_name
+    read -p "👉 1. 请给这台 VPS 起个名字 (如: 香港A): " vps_name
     read -p "👉 2. 发送时间间隔 (秒): " interval
     read -p "👉 3. 粘贴 Bot Token: " bot_token
     read -p "👉 4. 粘贴 Chat ID: " chat_id
@@ -109,6 +136,7 @@ elif [ "$action" == "1" ]; then
     apt-get update -y &> /dev/null
     apt-get install vnstat curl bc -y &> /dev/null
 
+    # 快捷指令 (修复版)
     wget -qO /usr/local/bin/liuliang https://raw.githubusercontent.com/wxp0577/tg-Traffic-reporting-robot/refs/heads/main/install.sh
     chmod +x /usr/local/bin/liuliang
 
@@ -117,6 +145,7 @@ elif [ "$action" == "1" ]; then
 to_gb() {
     local val=\$(echo "\$1" | awk '{print \$1}')
     local unit=\$(echo "\$1" | awk '{print \$2}')
+    if [ -z "\$val" ] || [ -z "\$unit" ]; then echo "0.000 GB"; return; fi
     awk -v v="\$val" -v u="\$unit" 'BEGIN {
         if (u ~ /KiB|KB/) { printf "%.3f GB", v / 1024 / 1024 }
         else if (u ~ /MiB|MB/) { printf "%.3f GB", v / 1024 }
@@ -141,7 +170,7 @@ while true; do
     if echo "\$STATS" | grep -q ";"; then
         TODAY_GB=\$(to_gb "\$(echo "\$STATS" | cut -d ';' -f 6)")
     else
-        TODAY_GB="数据初始化中..."
+        TODAY_GB="初始化中..."
     fi
 
     MESSAGE="🖥 <b>VPS 状态上报</b>%0A---------------------------%0A📛 <b>机器名称：</b>$vps_name%0A🌐 <b>IP 地址：</b>\${IP}%0A📅 <b>上报时间：</b>\${TIME}%0A%0A📊 <b>流量统计：</b>%0A🔋 <b>开机累计：</b>\${ACC_GB}%0A📅 <b>今日使用：</b>\${TODAY_GB}%0A%0A⚙️ <b>系统性能：</b>%0A💿 <b>CPU 占用：</b>\${CPU}%0A📟 <b>内存占用：</b>\${MEM}%0A💽 <b>硬盘占用：</b>\${DISK}"
@@ -170,6 +199,6 @@ EOF
     echo "===================================================="
     exit 0
 else
-    echo "❌ 选项错误，请重新输入"
+    echo "❌ 选项错误"
     exit 1
 fi
