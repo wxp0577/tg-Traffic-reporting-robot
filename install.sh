@@ -2,7 +2,6 @@
 
 # ================= 性能采集函数 =================
 
-# 1. 流量单位转换 (强制转为 GB)
 to_gb() {
     local val=$(echo "$1" | awk '{print $1}')
     local unit=$(echo "$1" | awk '{print $2}')
@@ -17,39 +16,40 @@ to_gb() {
     }'
 }
 
-# 2. 获取当前 IP 地址
 get_ip() {
     local ip=$(curl -s http://ipinfo.io/ip)
     [ -z "$ip" ] && ip=$(curl -s ifconfig.me)
     echo "$ip"
 }
 
-# 3. 获取 CPU 占用率
 get_cpu() {
     echo $[100-$(vmstat 1 2|tail -1|awk '{print $15}')]"%"
 }
 
-# 4. 获取内存占用率
 get_mem() {
     free | grep Mem | awk '{printf "%.2f%%", $3/$2 * 100.0}'
 }
 
-# 5. 获取磁盘占用率 (根目录)
 get_disk() {
     df -h / | awk 'NR==2 {print $5}'
 }
 
-# ================= 数据采集 & 变量 =================
+# ================= 数据采集 =================
 interface=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
 [ -z "$interface" ] && interface="eth0"
 
-# 仪表盘显示数据
 boot_bytes=$(cat /proc/net/dev | grep "$interface:" | awk '{print $2 + $10}')
 boot_gb=$(awk "BEGIN {printf \"%.3f GB\", $boot_bytes / 1024 / 1024 / 1024}")
+
 today_gb="等待统计..."
 if command -v vnstat &> /dev/null; then
     stats=$(vnstat -i $interface --oneline 2>/dev/null)
-    [ -n "$stats" ] && today_gb=$(to_gb "$(echo "$stats" | cut -d ';' -f 6)")
+    # 增加严格校验：只有返回的数据包含分号(;)，才说明有正常数据
+    if echo "$stats" | grep -q ";"; then
+        today_gb=$(to_gb "$(echo "$stats" | cut -d ';' -f 6)")
+    else
+        today_gb="数据初始化中(约5分)..."
+    fi
 fi
 
 # ================= 显示主菜单 =================
@@ -68,7 +68,6 @@ echo "  0. ❌ 退出"
 echo "===================================================="
 read -p "👉 请选择 [0-2]: " action
 
-# ================= 卸载逻辑 =================
 if [ "$action" == "2" ]; then
     systemctl stop tgtraffic &>/dev/null
     systemctl disable tgtraffic &>/dev/null
@@ -77,7 +76,10 @@ if [ "$action" == "2" ]; then
     echo "✅ 卸载成功！"
     exit 0
 
-# ================= 安装逻辑 =================
+elif [ "$action" == "0" ]; then
+    echo "👋 已退出。"
+    exit 0
+
 elif [ "$action" == "1" ]; then
     echo ""
     read -p "👉 1. 请给这台 VPS 起个名字 (如: 香港A, 美国01): " vps_name
@@ -88,10 +90,9 @@ elif [ "$action" == "1" ]; then
     apt-get update -y &> /dev/null
     apt-get install vnstat curl bc -y &> /dev/null
 
-    # 快捷指令
-    cp -f $(readlink -f "$0") /usr/local/bin/liuliang && chmod +x /usr/local/bin/liuliang
+    wget -qO /usr/local/bin/liuliang https://raw.githubusercontent.com/wxp0577/tg-Traffic-reporting-robot/refs/heads/main/install.sh
+    chmod +x /usr/local/bin/liuliang
 
-    # 生成推送脚本
     cat > /root/tg_traffic_run.sh <<EOF
 #!/bin/bash
 to_gb() {
@@ -118,8 +119,12 @@ while true; do
     ACC_GB=\$(awk "BEGIN {printf \"%.3f GB\", \$BOOT_BYTES / 1024 / 1024 / 1024}")
     
     STATS=\$(vnstat -i $interface --oneline 2>/dev/null)
-    TODAY_GB="0.000 GB"
-    [ -n "\$STATS" ] && TODAY_GB=\$(to_gb "\$(echo "\$STATS" | cut -d ';' -f 6)")
+    # 增加后台推送时的数据校验
+    if echo "\$STATS" | grep -q ";"; then
+        TODAY_GB=\$(to_gb "\$(echo "\$STATS" | cut -d ';' -f 6)")
+    else
+        TODAY_GB="数据初始化中(约5分)..."
+    fi
 
     MESSAGE="🖥 <b>VPS 状态上报</b>%0A---------------------------%0A📛 <b>机器名称：</b>$vps_name%0A🌐 <b>IP 地址：</b>\${IP}%0A📅 <b>上报时间：</b>\${TIME}%0A%0A📊 <b>流量统计：</b>%0A🔋 <b>开机累计：</b>\${ACC_GB}%0A📅 <b>今日使用：</b>\${TODAY_GB}%0A%0A⚙️ <b>系统性能：</b>%0A💿 <b>CPU 占用：</b>\${CPU}%0A📟 <b>内存占用：</b>\${MEM}%0A💽 <b>硬盘占用：</b>\${DISK}"
 
@@ -129,7 +134,6 @@ done
 EOF
     chmod +x /root/tg_traffic_run.sh
 
-    # 服务配置
     cat > /etc/systemd/system/tgtraffic.service <<EOF
 [Unit]
 Description=TG Traffic Bot Service
