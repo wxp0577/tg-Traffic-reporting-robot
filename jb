@@ -8,7 +8,7 @@ set -e
 HYSTERIA_VERSION="v2.6.3"
 SERVER_PORT=6298       
 # 在下方数组中添加你的多个 UUID 或密码
-UUIDS=("1d9d9c1f-839f-46f5-a791-8238edc867a4" "b2aa6e7b-39cc-4667-9d23-b1b06d97b416" "user-uuid-003")
+UUIDS=("密码1" "密码2" "user-uuid-003")
 CERT_FILE="cert.pem"
 KEY_FILE="key.pem"
 SNI="www.bing.com"
