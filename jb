@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# -*- coding: utf-8 -*-
+# Hysteria2 极简部署脚本 - 真正的多用户修正版
+
+set -e
+
+# ---------- 配置（可自行修改） ----------
+HYSTERIA_VERSION="v2.6.3"
+SERVER_PORT=6298       
+# 在下方数组中添加你的多个 UUID 或密码
+UUIDS=("1d9d9c1f-839f-46f5-a791-8238edc867a4" "b2aa6e7b-39cc-4667-9d23-b1b06d97b416" "user-uuid-003")
+CERT_FILE="cert.pem"
+KEY_FILE="key.pem"
+SNI="www.bing.com"
+ALPN="h3"
+# ---------------------------------------
+
+echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+echo "Hysteria2 极简部署脚本 - 多用户修正版"
+echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+arch_name() {
+    local machine
+    machine=$(uname -m | tr '[:upper:]' '[:lower:]')
+    if [[ "$machine" == *"arm64"* ]] || [[ "$machine" == *"aarch64"* ]]; then
+        echo "arm64"
+    elif [[ "$machine" == *"x86_64"* ]] || [[ "$machine" == *"amd64"* ]]; then
+        echo "amd64"
+    else
+        echo ""
+    fi
+}
+
+ARCH=$(arch_name)
+if [ -z "$ARCH" ]; then
+  echo "❌ 无法识别 CPU 架构: $(uname -m)"
+  exit 1
+fi
+
+BIN_NAME="hysteria-linux-${ARCH}"
+BIN_PATH="./${BIN_NAME}"
+
+download_binary() {
+    if [ -f "$BIN_PATH" ]; then
+        echo "✅ 二进制已存在，跳过下载。"
+        return
+    fi
+    URL="https://github.com/apernet/hysteria/releases/download/app/${HYSTERIA_VERSION}/${BIN_NAME}"
+    echo "⏳ 下载: $URL"
+    curl -L --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$URL"
+    chmod +x "$BIN_PATH"
+    echo "✅ 下载完成并设置可执行: $BIN_PATH"
+}
+
+ensure_cert() {
+    if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+        echo "✅ 发现证书，使用现有 cert/key。"
+        return
+    fi
+    echo "🔑 未发现证书，使用 openssl 生成自签证书..."
+    openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+        -days 3650 -keyout "$KEY_FILE" -out "$CERT_FILE" -subj "/CN=${SNI}"
+    echo "✅ 证书生成成功。"
+}
+
+# 核心修正：使用 command 认证方式
+write_config() {
+    # 1. 生成包含所有 UUID 的密码本文件
+    > valid_uuids.txt
+    for uuid in "${UUIDS[@]}"; do
+        echo "$uuid" >> valid_uuids.txt
+    done
+    echo "✅ 密码本 valid_uuids.txt 已生成（共 ${#UUIDS[@]} 个用户）。"
+
+    # 2. 生成认证脚本 (Hysteria2 传参: $1=客户端IP, $2=客户端提供的密码)
+    # grep -Fxq 会精确匹配文本，匹配成功返回 0 (允许连接)，失败返回 1 (拒绝连接)
+cat > auth.sh <<'EOF'
+#!/bin/bash
+grep -Fxq "$2" valid_uuids.txt
+EOF
+    chmod +x auth.sh
+    echo "✅ 认证脚本 auth.sh 已生成并赋予执行权限。"
+
+    # 3. 生成主配置文件
+cat > server.yaml <<EOF
+listen: ":${SERVER_PORT}"
+tls:
+  cert: "$(pwd)/${CERT_FILE}"
+  key: "$(pwd)/${KEY_FILE}"
+  alpn:
+    - "${ALPN}"
+auth:
+  type: command
+  command: "$(pwd)/auth.sh"
+bandwidth:
+  up: "200mbps"
+  down: "200mbps"
+quic:
+  max_idle_timeout: "10s"
+  max_concurrent_streams: 4
+  initial_stream_receive_window: 65536
+  max_stream_receive_window: 131072
+  initial_conn_receive_window: 131072
+  max_conn_receive_window: 262144
+EOF
+    echo "✅ 写入配置 server.yaml。"
+}
+
+get_server_ip() {
+    IP=$(curl -s --max-time 10 https://api.ipify.org || echo "YOUR_SERVER_IP")
+    echo "$IP"
+}
+
+print_connection_info() {
+    local IP="$1"
+    echo "🎉 Hysteria2 部署成功！（多用户修正版）"
+    echo "=========================================================================="
+    echo "📋 服务器信息:"
+    echo "   🌐 IP地址: $IP"
+    echo "   🔌 端口: $SERVER_PORT"
+    echo ""
+    echo "📱 节点链接列表:"
+    for i in "${!UUIDS[@]}"; do
+        # 你的日志显示之前加上 insecure=1 是正确的，这里保留
+        echo "   [用户 $((i+1))]: hysteria2://${UUIDS[$i]}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-User$((i+1))"
+    done
+    echo "=========================================================================="
+}
+
+main() {
+    download_binary
+    ensure_cert
+    write_config
+    SERVER_IP=$(get_server_ip)
+    print_connection_info "$SERVER_IP"
+    echo "🚀 启动 Hysteria2 服务器..."
+    exec "$BIN_PATH" server -c server.yaml
+}
+
+main
